@@ -1,0 +1,123 @@
+# Crobat local deployment: MySQL + Cassandra + the six services.
+# NOTE: this file is correct-by-construction but was NOT executed in the
+# sandbox the project was built in (no Docker there). First run:
+#   docker compose up --build
+# then mint a tenant token and create a task — see README "Try it".
+
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpw
+      MYSQL_DATABASE: crobat
+      MYSQL_USER: crobat
+      MYSQL_PASSWORD: crobat
+    command: --default-authentication-plugin=mysql_native_password
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      # The schema is applied automatically on first boot.
+      - ./migrations/mysql.sql:/docker-entrypoint-initdb.d/01-crobat.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  cassandra:
+    image: cassandra:4.1
+    environment:
+      CASSANDRA_CLUSTER_NAME: crobat
+      MAX_HEAP_SIZE: 512M
+      HEAP_NEWSIZE: 128M
+    ports:
+      - "9042:9042"
+    volumes:
+      - cassandra-data:/var/lib/cassandra
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'DESCRIBE KEYSPACES' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  cassandra-init:
+    image: cassandra:4.1
+    depends_on:
+      cassandra:
+        condition: service_healthy
+    volumes:
+      - ./migrations/cassandra.cql:/schema.cql:ro
+    entrypoint: ["cqlsh", "cassandra", "-f", "/schema.cql"]
+    restart: "no"
+
+  task-service:
+    build: .
+    command: ["task-service"]
+    environment: &crobat-env
+      CROBAT_STORE: mysql
+      CROBAT_MYSQL_DSN: "crobat:crobat@tcp(mysql:3306)/crobat?parseTime=true&loc=UTC"
+      CROBAT_CASSANDRA_HOSTS: cassandra
+      CROBAT_JWT_SECRET: dev-secret-change-me
+      # base64-encoded 32-byte AES key (this one is a dev placeholder)
+      CROBAT_SECRET_KEY: "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+    depends_on:
+      mysql:
+        condition: service_healthy
+    ports:
+      - "8081:8081"
+
+  job-service:
+    build: .
+    command: ["job-service"]
+    environment:
+      <<: *crobat-env
+      CROBAT_ADDR: ":8082"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      cassandra-init:
+        condition: service_completed_successfully
+    ports:
+      - "8082:8082"
+
+  scheduler:
+    build: .
+    command: ["scheduler"]
+    environment: *crobat-env
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  executor:
+    build: .
+    command: ["executor"]
+    environment: *crobat-env
+    depends_on:
+      mysql:
+        condition: service_healthy
+    deploy:
+      replicas: 2
+
+  reconciler:
+    build: .
+    command: ["reconciler"]
+    environment: *crobat-env
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  archiver:
+    build: .
+    command: ["archiver"]
+    environment:
+      <<: *crobat-env
+    depends_on:
+      mysql:
+        condition: service_healthy
+      cassandra-init:
+        condition: service_completed_successfully
+
+volumes:
+  mysql-data:
+  cassandra-data:

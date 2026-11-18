@@ -1,0 +1,15 @@
+# Build outputs
+/task-service
+/job-service
+/scheduler
+/executor
+/reconciler
+/archiver
+*.out
+# Local env / secrets
+.env
+*.local
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
