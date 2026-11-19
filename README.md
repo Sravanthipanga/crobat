@@ -12,7 +12,7 @@ queue**, and the scheduler inserts job rows and advances the schedule in
 one transaction. The schedule and the queue cannot disagree, because
 they are the same write.
 
-![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
+![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg) [![CI](https://github.com/Sravanthipanga/crobat/actions/workflows/ci.yml/badge.svg)](https://github.com/Sravanthipanga/crobat/actions/workflows/ci.yml)
 ![Go](https://img.shields.io/badge/go-1.23+-00ADD8.svg)
 
 ## Features
